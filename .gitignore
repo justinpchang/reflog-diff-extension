@@ -1,0 +1,7 @@
+node_modules/
+out/
+.DS_Store
+*.vsix
+.vscode-test/
+.yarn/cache/
+.yarn/install-state.gz

@@ -1,0 +1,98 @@
+{
+  "name": "reflog-diff",
+  "displayName": "Reflog Diff",
+  "description": "Browse branch reflog snapshots and diff files using native editor diff.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:reflogDiff.view",
+    "onCommand:reflogDiff.refresh",
+    "onCommand:reflogDiff.compareTwo",
+    "onCommand:reflogDiff.compareWithPrevious",
+    "onCommand:reflogDiff.pickLeft",
+    "onCommand:reflogDiff.pickRight"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "reflogDiff.view",
+          "name": "Reflog Diff"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "reflogDiff.refresh",
+        "title": "Refresh"
+      },
+      {
+        "command": "reflogDiff.compareTwo",
+        "title": "Compare Two Entries"
+      },
+      {
+        "command": "reflogDiff.compareWithPrevious",
+        "title": "Compare With Previous"
+      },
+      {
+        "command": "reflogDiff.pickLeft",
+        "title": "Set as Left"
+      },
+      {
+        "command": "reflogDiff.pickRight",
+        "title": "Set as Right"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "reflogDiff.refresh",
+          "when": "view == reflogDiff.view",
+          "group": "navigation",
+          "icon": "$(refresh)"
+        },
+        {
+          "command": "reflogDiff.compareTwo",
+          "when": "view == reflogDiff.view",
+          "group": "navigation@1",
+          "icon": "$(git-compare)"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "reflogDiff.pickLeft",
+          "when": "view == reflogDiff.view && viewItem == reflogEntry",
+          "group": "inline"
+        },
+        {
+          "command": "reflogDiff.pickRight",
+          "when": "view == reflogDiff.view && viewItem == reflogEntry",
+          "group": "inline"
+        },
+        {
+          "command": "reflogDiff.compareWithPrevious",
+          "when": "view == reflogDiff.view && viewItem == reflogEntry",
+          "group": "inline@1"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -watch -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.4"
+  }
+}
