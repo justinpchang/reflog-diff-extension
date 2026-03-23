@@ -3,7 +3,8 @@ import * as vscode from 'vscode'
 import { listChangedFiles, repoFromWorkspaceFolder, showFileAtSha } from './git'
 import { type ReflogEntry } from './models'
 import { ReflogContentProvider } from './contentProvider'
-import { ReflogItem, ReflogProvider } from './reflogProvider'
+import { ReflogProvider } from './reflogProvider'
+import { ReflogWebviewProvider } from './reflogWebview'
 
 interface CompareSelection {
   left?: ReflogEntry
@@ -37,11 +38,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const provider = new ReflogProvider()
   const contentProvider = new ReflogContentProvider()
   const selection: CompareSelection = {}
+  const webviewProvider = new ReflogWebviewProvider(
+    (index) => {
+      const entry = provider.getEntries().find((candidate) => candidate.index === index)
+      if (!entry) {
+        return
+      }
+      selection.left = entry
+      webviewProvider.setState(provider.getEntries(), selection.left?.index, selection.right?.index)
+    },
+    (index) => {
+      const entry = provider.getEntries().find((candidate) => candidate.index === index)
+      if (!entry) {
+        return
+      }
+      selection.right = entry
+      webviewProvider.setState(provider.getEntries(), selection.left?.index, selection.right?.index)
+    },
+  )
 
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('reflog-diff', contentProvider),
   )
-  context.subscriptions.push(vscode.window.registerTreeDataProvider('reflogDiff.view', provider))
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider('reflogDiff.view', webviewProvider))
 
   async function refresh(): Promise<void> {
     const root = getWorkspaceRoot()
@@ -52,6 +71,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     try {
       await provider.refresh(root)
+      const entries = provider.getEntries()
+      if (selection.left) {
+        selection.left = entries.find((entry) => entry.index === selection.left?.index)
+      }
+      if (selection.right) {
+        selection.right = entries.find((entry) => entry.index === selection.right?.index)
+      }
+      webviewProvider.setState(entries, selection.left?.index, selection.right?.index)
     } catch (error) {
       void vscode.window.showErrorMessage(`Reflog Diff refresh failed: ${String(error)}`)
     }
@@ -98,16 +125,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('reflogDiff.pickLeft', (item: ReflogItem) => {
-      selection.left = item.entry
-      void vscode.window.showInformationMessage(`Left selected: ${item.entry.selector}`)
+    vscode.commands.registerCommand('reflogDiff.pickLeft', async () => {
+      const picked = await vscode.window.showQuickPick(
+        provider.getEntries().map((entry) => ({
+          label: `${entry.sha.slice(0, 8)} ${entry.subject}`,
+          description: `@{${entry.index}}  ${entry.relTime}`,
+          entry,
+        })),
+        { title: 'Set left side' },
+      )
+      if (!picked) {
+        return
+      }
+
+      selection.left = picked.entry
+      webviewProvider.setState(provider.getEntries(), selection.left?.index, selection.right?.index)
     }),
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('reflogDiff.pickRight', (item: ReflogItem) => {
-      selection.right = item.entry
-      void vscode.window.showInformationMessage(`Right selected: ${item.entry.selector}`)
+    vscode.commands.registerCommand('reflogDiff.pickRight', async () => {
+      const picked = await vscode.window.showQuickPick(
+        provider.getEntries().map((entry) => ({
+          label: `${entry.sha.slice(0, 8)} ${entry.subject}`,
+          description: `@{${entry.index}}  ${entry.relTime}`,
+          entry,
+        })),
+        { title: 'Set right side' },
+      )
+      if (!picked) {
+        return
+      }
+
+      selection.right = picked.entry
+      webviewProvider.setState(provider.getEntries(), selection.left?.index, selection.right?.index)
     }),
   )
 
@@ -123,9 +174,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('reflogDiff.compareWithPrevious', async (item: ReflogItem) => {
+    vscode.commands.registerCommand('reflogDiff.compareWithPrevious', async () => {
       const entries = provider.getEntries()
-      const current = item.entry
+      const current = selection.right
+      if (!current) {
+        void vscode.window.showWarningMessage('Choose a right-side reflog entry first.')
+        return
+      }
       const previous = entries[current.index + 1]
 
       if (!previous) {
