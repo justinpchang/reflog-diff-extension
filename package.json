@@ -16,6 +16,7 @@
     "onView:reflogDiff.view",
     "onCommand:reflogDiff.refresh",
     "onCommand:reflogDiff.compareTwo",
+    "onCommand:reflogDiff.compareFile",
     "onCommand:reflogDiff.compareWithPrevious",
     "onCommand:reflogDiff.pickLeft",
     "onCommand:reflogDiff.pickRight"
@@ -26,7 +27,7 @@
       "explorer": [
         {
           "id": "reflogDiff.view",
-          "name": "Reflog Diff",
+          "name": "Reflog",
           "type": "webview"
         }
       ]
@@ -34,11 +35,18 @@
     "commands": [
       {
         "command": "reflogDiff.refresh",
-        "title": "Refresh"
+        "title": "Refresh",
+        "icon": "$(refresh)"
       },
       {
         "command": "reflogDiff.compareTwo",
-        "title": "Compare Two Entries"
+        "title": "Compare (All)",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "reflogDiff.compareFile",
+        "title": "Compare (File)",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "reflogDiff.compareWithPrevious",
@@ -66,6 +74,12 @@
           "when": "view == reflogDiff.view",
           "group": "navigation@1",
           "icon": "$(git-compare)"
+        },
+        {
+          "command": "reflogDiff.compareFile",
+          "when": "view == reflogDiff.view",
+          "group": "navigation@2",
+          "icon": "$(go-to-file)"
         }
       ]
     }

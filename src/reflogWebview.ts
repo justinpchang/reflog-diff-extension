@@ -2,7 +2,7 @@ import * as vscode from 'vscode'
 import { type ReflogEntry } from './models'
 
 interface WebviewMessage {
-  type: 'setLeft' | 'setRight'
+  type: 'setLeft' | 'setRight' | 'openPrevious'
   index: number
 }
 
@@ -22,6 +22,7 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly onSetLeft: (index: number) => void,
     private readonly onSetRight: (index: number) => void,
+    private readonly onOpenPrevious: (index: number) => void,
   ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -38,6 +39,11 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
 
       if (message.type === 'setRight') {
         this.onSetRight(message.index)
+        return
+      }
+
+      if (message.type === 'openPrevious') {
+        this.onOpenPrevious(message.index)
       }
     })
     this.pushState()
@@ -100,6 +106,12 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
       margin: 0;
       transform: scale(0.9);
     }
+    tr.row {
+      cursor: pointer;
+    }
+    tr.row:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
     .entry-line {
       display: flex;
       align-items: center;
@@ -121,6 +133,7 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
       flex: 0 0 auto;
       margin-left: 8px;
       color: var(--vscode-descriptionForeground);
+      opacity: 0.78;
     }
     .empty {
       color: var(--vscode-descriptionForeground);
@@ -149,7 +162,7 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
         const safeSubject = escapeHtml(entry.subject);
         const safeTime = escapeHtml(entry.relTime);
         const shortSha = entry.sha.slice(0, 8);
-        return '<tr>' +
+        return '<tr class="row" data-row-index="' + entry.index + '">' +
           '<td class="col-left"><input type="radio" name="left" data-index="' + entry.index + '" ' + leftChecked + ' aria-label="Set left @{'+ entry.index +'}"></td>' +
           '<td class="col-right"><input type="radio" name="right" data-index="' + entry.index + '" ' + rightChecked + ' aria-label="Set right @{'+ entry.index +'}"></td>' +
           '<td>' +
@@ -159,6 +172,9 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
       }).join('');
 
       for (const input of rows.querySelectorAll('input[name="left"]')) {
+        input.addEventListener('click', (event) => {
+          event.stopPropagation();
+        });
         input.addEventListener('change', (event) => {
           const target = event.target;
           if (target && target.checked) {
@@ -168,11 +184,21 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
       }
 
       for (const input of rows.querySelectorAll('input[name="right"]')) {
+        input.addEventListener('click', (event) => {
+          event.stopPropagation();
+        });
         input.addEventListener('change', (event) => {
           const target = event.target;
           if (target && target.checked) {
             vscode.postMessage({ type: 'setRight', index: Number(target.dataset.index) });
           }
+        });
+      }
+
+      for (const row of rows.querySelectorAll('tr.row')) {
+        row.addEventListener('click', () => {
+          const index = Number(row.dataset.rowIndex);
+          vscode.postMessage({ type: 'openPrevious', index });
         });
       }
     }
