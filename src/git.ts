@@ -58,6 +58,18 @@ export async function listChangedFiles(cwd: string, leftSha: string, rightSha: s
   return output.split('\n').filter(Boolean)
 }
 
+export async function listChangedFilesAgainstWorkingTree(
+  cwd: string,
+  leftSha: string,
+): Promise<string[]> {
+  const output = await runGit(cwd, ['diff', '--name-only', leftSha])
+  if (!output) {
+    return []
+  }
+
+  return output.split('\n').filter(Boolean)
+}
+
 export async function showFileAtSha(cwd: string, sha: string, filePath: string): Promise<string> {
   try {
     return await runGit(cwd, ['show', `${sha}:${filePath}`])

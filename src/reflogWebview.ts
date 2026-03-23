@@ -10,6 +10,7 @@ interface WebviewStateMessage {
   type: 'state'
   entries: ReflogEntry[]
   leftIndex?: number
+  rightIsCurrent?: boolean
   rightIndex?: number
 }
 
@@ -17,6 +18,7 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView
   private entries: ReflogEntry[] = []
   private leftIndex?: number
+  private rightIsCurrent = true
   private rightIndex?: number
 
   constructor(
@@ -49,9 +51,15 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
     this.pushState()
   }
 
-  setState(entries: ReflogEntry[], leftIndex?: number, rightIndex?: number): void {
+  setState(
+    entries: ReflogEntry[],
+    leftIndex?: number,
+    rightIsCurrent = false,
+    rightIndex?: number,
+  ): void {
     this.entries = entries
     this.leftIndex = leftIndex
+    this.rightIsCurrent = rightIsCurrent
     this.rightIndex = rightIndex
     this.pushState()
   }
@@ -65,6 +73,7 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
       type: 'state',
       entries: this.entries,
       leftIndex: this.leftIndex,
+      rightIsCurrent: this.rightIsCurrent,
       rightIndex: this.rightIndex,
     }
     void this.view.webview.postMessage(payload)
@@ -150,19 +159,21 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
     const rows = document.getElementById('rows');
 
     function renderState(state) {
-      const { entries, leftIndex, rightIndex } = state;
-      if (!entries.length) {
-        rows.innerHTML = '<tr><td colspan="3" class="empty">No reflog entries found.</td></tr>';
-        return;
-      }
+      const { entries, leftIndex, rightIndex, rightIsCurrent } = state;
+      const currentRow = '<tr class="row" data-row-index="-1" title="Current working tree changes">' +
+        '<td class="col-left"></td>' +
+        '<td class="col-right"><input type="radio" name="right" data-index="-1" ' + (rightIsCurrent ? 'checked' : '') + ' aria-label="Set right Current"></td>' +
+        '<td><div class="entry-line"><span class="sha">[current]</span><span class="subject">Uncommitted changes</span><span class="time">now</span></div></td>' +
+      '</tr>';
 
-      rows.innerHTML = entries.map((entry) => {
+      const entryRows = entries.map((entry) => {
         const leftChecked = leftIndex === entry.index ? 'checked' : '';
-        const rightChecked = rightIndex === entry.index ? 'checked' : '';
+        const rightChecked = !rightIsCurrent && rightIndex === entry.index ? 'checked' : '';
         const safeSubject = escapeHtml(entry.subject);
         const safeTime = escapeHtml(entry.relTime);
         const shortSha = entry.sha.slice(0, 8);
-        return '<tr class="row" data-row-index="' + entry.index + '">' +
+        const tooltip = escapeAttr('[' + shortSha + '] ' + entry.subject + '  ' + entry.relTime);
+        return '<tr class="row" data-row-index="' + entry.index + '" title="' + tooltip + '">' +
           '<td class="col-left"><input type="radio" name="left" data-index="' + entry.index + '" ' + leftChecked + ' aria-label="Set left @{'+ entry.index +'}"></td>' +
           '<td class="col-right"><input type="radio" name="right" data-index="' + entry.index + '" ' + rightChecked + ' aria-label="Set right @{'+ entry.index +'}"></td>' +
           '<td>' +
@@ -170,6 +181,12 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
           '</td>' +
         '</tr>';
       }).join('');
+
+      const emptyRow = entries.length
+        ? ''
+        : '<tr><td colspan="3" class="empty">No reflog entries found.</td></tr>';
+
+      rows.innerHTML = currentRow + entryRows + emptyRow;
 
       for (const input of rows.querySelectorAll('input[name="left"]')) {
         input.addEventListener('click', (event) => {
@@ -210,6 +227,10 @@ export class ReflogWebviewProvider implements vscode.WebviewViewProvider {
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value);
     }
 
     window.addEventListener('message', (event) => {

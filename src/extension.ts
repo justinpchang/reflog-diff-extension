@@ -1,6 +1,11 @@
 import * as path from 'node:path'
 import * as vscode from 'vscode'
-import { listChangedFiles, repoFromWorkspaceFolder, showFileAtSha } from './git'
+import {
+  listChangedFiles,
+  listChangedFilesAgainstWorkingTree,
+  repoFromWorkspaceFolder,
+  showFileAtSha,
+} from './git'
 import { type ReflogEntry } from './models'
 import { ReflogContentProvider } from './contentProvider'
 import { ReflogProvider } from './reflogProvider'
@@ -9,6 +14,7 @@ import { ReflogWebviewProvider } from './reflogWebview'
 interface CompareSelection {
   left?: ReflogEntry
   right?: ReflogEntry
+  rightIsCurrent: boolean
 }
 
 type AlertLevel = 'info' | 'warn' | 'error'
@@ -66,25 +72,51 @@ function getRefreshIntervalMs(): number {
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const provider = new ReflogProvider()
   const contentProvider = new ReflogContentProvider()
-  const selection: CompareSelection = {}
+  const selection: CompareSelection = { rightIsCurrent: true }
   let isRefreshing = false
   let refreshInterval: ReturnType<typeof setInterval> | undefined
   const webviewProvider = new ReflogWebviewProvider(
     (index) => {
+      if (index < 0) {
+        return
+      }
       const entry = provider.getEntries().find((candidate) => candidate.index === index)
       if (!entry) {
         return
       }
       selection.left = entry
-      webviewProvider.setState(provider.getEntries(), selection.left?.index, selection.right?.index)
+      webviewProvider.setState(
+        provider.getEntries(),
+        selection.left?.index,
+        selection.rightIsCurrent,
+        selection.right?.index,
+      )
     },
     (index) => {
+      if (index < 0) {
+        selection.right = undefined
+        selection.rightIsCurrent = true
+        webviewProvider.setState(
+          provider.getEntries(),
+          selection.left?.index,
+          selection.rightIsCurrent,
+          undefined,
+        )
+        return
+      }
+
       const entry = provider.getEntries().find((candidate) => candidate.index === index)
       if (!entry) {
         return
       }
       selection.right = entry
-      webviewProvider.setState(provider.getEntries(), selection.left?.index, selection.right?.index)
+      selection.rightIsCurrent = false
+      webviewProvider.setState(
+        provider.getEntries(),
+        selection.left?.index,
+        selection.rightIsCurrent,
+        selection.right?.index,
+      )
     },
     (index) => {
       void vscode.commands.executeCommand('reflogDiff.compareWithPrevious', index)
@@ -123,11 +155,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (entries.length === 0) {
         selection.left = undefined
         selection.right = undefined
+        selection.rightIsCurrent = true
       } else {
-        selection.right = preservedRight ?? entries[0]
+        selection.right = selection.rightIsCurrent ? undefined : preservedRight ?? entries[0]
         selection.left = preservedLeft ?? entries[1] ?? entries[0]
       }
-      webviewProvider.setState(entries, selection.left?.index, selection.right?.index)
+      webviewProvider.setState(
+        entries,
+        selection.left?.index,
+        selection.rightIsCurrent,
+        selection.right?.index,
+      )
     } catch (error) {
       alert(`Reflog Diff refresh failed: ${String(error)}`, 'error')
     } finally {
@@ -196,6 +234,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   }
 
+  async function openDiffAgainstWorkingTree(left: ReflogEntry): Promise<void> {
+    const repoPath = provider.getRepoPath() || getWorkspaceRoot()
+    if (!repoPath) {
+      alert('Reflog Diff: cannot resolve repository path.', 'warn')
+      return
+    }
+
+    const files = await listChangedFilesAgainstWorkingTree(repoPath, left.sha)
+    if (files.length === 0) {
+      alert('No file differences between selected reflog entry and working tree.')
+      return
+    }
+
+    const resources = await Promise.all(
+      files.map(async (filePath): Promise<[vscode.Uri, vscode.Uri, vscode.Uri]> => {
+        const leftContent = await showFileAtSha(repoPath, left.sha, filePath)
+        const leftUri = buildSnapshotUri(repoPath, left.sha, filePath)
+        contentProvider.setContent(leftUri, leftContent)
+
+        const rightUri = vscode.Uri.file(path.join(repoPath, filePath))
+        const labelUri = vscode.Uri.file(path.join(repoPath, filePath))
+        return [labelUri, leftUri, rightUri]
+      }),
+    )
+
+    const title = `Reflog compare @{${left.index}} ↔ current`
+    await vscode.commands.executeCommand('vscode.changes', title, resources)
+  }
+
+  async function openSingleFileDiffAgainstWorkingTree(
+    left: ReflogEntry,
+    filePath: string,
+  ): Promise<void> {
+    const repoPath = provider.getRepoPath() || getWorkspaceRoot()
+    if (!repoPath) {
+      alert('Reflog Diff: cannot resolve repository path.', 'warn')
+      return
+    }
+
+    const leftContent = await showFileAtSha(repoPath, left.sha, filePath)
+    const leftUri = buildSnapshotUri(repoPath, left.sha, filePath)
+    contentProvider.setContent(leftUri, leftContent)
+
+    const rightUri = vscode.Uri.file(path.join(repoPath, filePath))
+    const title = `${path.basename(filePath)} (@{${left.index}} ↔ current)`
+    await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title, {
+      preview: false,
+    })
+  }
+
   async function compareCurrentWithPrevious(current: ReflogEntry): Promise<void> {
     const previous = provider.getEntries()[current.index + 1]
     if (!previous) {
@@ -204,6 +292,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     await openDiffBetweenEntries(previous, current)
+  }
+
+  async function compareWorkingTreeWithLatest(): Promise<void> {
+    const latest = provider.getEntries()[0]
+    if (!latest) {
+      alert('No reflog entry available to compare with working tree.')
+      return
+    }
+
+    await openDiffAgainstWorkingTree(latest)
   }
 
   context.subscriptions.push(
@@ -253,7 +351,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       selection.left = picked.entry
-      webviewProvider.setState(provider.getEntries(), selection.left?.index, selection.right?.index)
+      webviewProvider.setState(
+        provider.getEntries(),
+        selection.left?.index,
+        selection.rightIsCurrent,
+        selection.right?.index,
+      )
     }),
   )
 
@@ -272,14 +375,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       selection.right = picked.entry
-      webviewProvider.setState(provider.getEntries(), selection.left?.index, selection.right?.index)
+      selection.rightIsCurrent = false
+      webviewProvider.setState(
+        provider.getEntries(),
+        selection.left?.index,
+        selection.rightIsCurrent,
+        selection.right?.index,
+      )
     }),
   )
 
   context.subscriptions.push(
     vscode.commands.registerCommand('reflogDiff.compareTwo', async () => {
-      if (!selection.left || !selection.right) {
-        alert('Pick both left and right reflog entries first.', 'warn')
+      if (!selection.left) {
+        alert('Pick a left reflog entry first.', 'warn')
+        return
+      }
+
+      if (selection.rightIsCurrent) {
+        await openDiffAgainstWorkingTree(selection.left)
+        return
+      }
+
+      if (!selection.right) {
+        alert('Pick a right reflog entry first.', 'warn')
         return
       }
 
@@ -289,8 +408,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscode.commands.registerCommand('reflogDiff.compareFile', async () => {
-      if (!selection.left || !selection.right) {
-        alert('Pick both left and right reflog entries first.', 'warn')
+      if (!selection.left) {
+        alert('Pick a left reflog entry first.', 'warn')
         return
       }
 
@@ -313,12 +432,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return
       }
 
+      if (selection.rightIsCurrent) {
+        await openSingleFileDiffAgainstWorkingTree(selection.left, relativeFilePath)
+        return
+      }
+
+      if (!selection.right) {
+        alert('Pick a right reflog entry first.', 'warn')
+        return
+      }
+
       await openSingleFileDiff(selection.left, selection.right, relativeFilePath)
     }),
   )
 
   context.subscriptions.push(
     vscode.commands.registerCommand('reflogDiff.compareWithPrevious', async (index?: number) => {
+      if (index === -1) {
+        await compareWorkingTreeWithLatest()
+        return
+      }
+
+      if (typeof index !== 'number' && selection.rightIsCurrent) {
+        await compareWorkingTreeWithLatest()
+        return
+      }
+
       const entries = provider.getEntries()
       const current = typeof index === 'number' ? entries.find((entry) => entry.index === index) : selection.right
       if (!current) {
