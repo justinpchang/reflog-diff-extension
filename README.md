@@ -4,6 +4,9 @@ Fast reflog comparison in VS Code / Cursor.
 
 Ideal for Graphite-style workflows where each branch usually has one commit and you keep amending it. Reflog Diff lets you quickly see what changed between amend snapshots.
 
+<img width="503" height="173" alt="Screenshot 2026-03-23 at 12 21 51 PM" src="https://github.com/user-attachments/assets/5121f99a-c684-4719-a945-7abb59340be1" />
+
+
 ## Installation
 
 ```bash
