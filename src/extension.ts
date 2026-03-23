@@ -12,6 +12,8 @@ interface CompareSelection {
 }
 
 type AlertLevel = 'info' | 'warn' | 'error'
+const REFRESH_INTERVAL_SETTING = 'reflogDiff.refreshIntervalMs'
+const DEFAULT_REFRESH_INTERVAL_MS = 1000
 
 function fileLabel(filePath: string): string {
   return filePath.split('/').pop() ?? filePath
@@ -50,11 +52,23 @@ function alert(message: string, level: AlertLevel = 'info'): void {
   void vscode.window.setStatusBarMessage(`${icon} ${message}`, 3000)
 }
 
+function getRefreshIntervalMs(): number {
+  const configured = vscode.workspace
+    .getConfiguration('reflogDiff')
+    .get<number>('refreshIntervalMs', DEFAULT_REFRESH_INTERVAL_MS)
+  if (!Number.isFinite(configured)) {
+    return DEFAULT_REFRESH_INTERVAL_MS
+  }
+
+  return Math.max(250, Math.floor(configured))
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const provider = new ReflogProvider()
   const contentProvider = new ReflogContentProvider()
   const selection: CompareSelection = {}
   let isRefreshing = false
+  let refreshInterval: ReturnType<typeof setInterval> | undefined
   const webviewProvider = new ReflogWebviewProvider(
     (index) => {
       const entry = provider.getEntries().find((candidate) => candidate.index === index)
@@ -82,7 +96,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   )
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('reflogDiff.view', webviewProvider))
 
-  async function refresh(): Promise<void> {
+  async function refresh(options?: { silentWhenNoWorkspace?: boolean }): Promise<void> {
     if (isRefreshing) {
       return
     }
@@ -90,7 +104,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const root = getWorkspaceRoot()
     if (!root) {
-      alert('Reflog Diff: open a workspace folder first.', 'warn')
+      if (!options?.silentWhenNoWorkspace) {
+        alert('Reflog Diff: open a workspace folder first.', 'warn')
+      }
       isRefreshing = false
       return
     }
@@ -98,12 +114,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     try {
       await provider.refresh(root)
       const entries = provider.getEntries()
+      const preservedLeft = selection.left
+        ? entries.find((entry) => entry.index === selection.left?.index)
+        : undefined
+      const preservedRight = selection.right
+        ? entries.find((entry) => entry.index === selection.right?.index)
+        : undefined
       if (entries.length === 0) {
         selection.left = undefined
         selection.right = undefined
       } else {
-        selection.right = entries[0]
-        selection.left = entries[1] ?? entries[0]
+        selection.right = preservedRight ?? entries[0]
+        selection.left = preservedLeft ?? entries[1] ?? entries[0]
       }
       webviewProvider.setState(entries, selection.left?.index, selection.right?.index)
     } catch (error) {
@@ -189,10 +211,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await refresh()
     }),
   )
-  const refreshInterval = setInterval(() => {
-    void refresh()
-  }, 1000)
-  context.subscriptions.push(new vscode.Disposable(() => clearInterval(refreshInterval)))
+
+  const applyRefreshInterval = (): void => {
+    if (refreshInterval) {
+      clearInterval(refreshInterval)
+    }
+
+    refreshInterval = setInterval(() => {
+      void refresh({ silentWhenNoWorkspace: true })
+    }, getRefreshIntervalMs())
+  }
+
+  applyRefreshInterval()
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration(REFRESH_INTERVAL_SETTING)) {
+        applyRefreshInterval()
+      }
+    }),
+  )
+  context.subscriptions.push(
+    new vscode.Disposable(() => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval)
+      }
+    }),
+  )
 
   context.subscriptions.push(
     vscode.commands.registerCommand('reflogDiff.pickLeft', async () => {

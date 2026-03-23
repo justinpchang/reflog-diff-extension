@@ -4,22 +4,19 @@
   "description": "Browse branch reflog snapshots and diff files using native editor diff.",
   "version": "0.0.1",
   "publisher": "local",
-  "private": true,
   "engines": {
     "vscode": "^1.90.0"
   },
+  "keywords": [
+    "git",
+    "reflog",
+    "diff",
+    "compare",
+    "history"
+  ],
   "categories": [
     "SCM",
     "Other"
-  ],
-  "activationEvents": [
-    "onView:reflogDiff.view",
-    "onCommand:reflogDiff.refresh",
-    "onCommand:reflogDiff.compareTwo",
-    "onCommand:reflogDiff.compareFile",
-    "onCommand:reflogDiff.compareWithPrevious",
-    "onCommand:reflogDiff.pickLeft",
-    "onCommand:reflogDiff.pickRight"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -61,6 +58,17 @@
         "title": "Set as Right"
       }
     ],
+    "configuration": {
+      "title": "Reflog Diff",
+      "properties": {
+        "reflogDiff.refreshIntervalMs": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 250,
+          "markdownDescription": "Auto-refresh interval for the reflog view in milliseconds."
+        }
+      }
+    },
     "menus": {
       "view/title": [
         {
@@ -86,7 +94,8 @@
   },
   "scripts": {
     "build": "tsc -p .",
-    "watch": "tsc -watch -p ."
+    "watch": "tsc -watch -p .",
+    "vscode:prepublish": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
