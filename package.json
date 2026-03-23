@@ -3,7 +3,7 @@
   "displayName": "Reflog Diff",
   "description": "Browse branch reflog snapshots and diff files using native editor diff.",
   "version": "0.0.1",
-  "publisher": "local",
+  "publisher": "justinpchang",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -101,5 +101,6 @@
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.5.4"
-  }
+  },
+  "license": "MIT"
 }

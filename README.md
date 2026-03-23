@@ -4,6 +4,12 @@ Fast reflog comparison in VS Code / Cursor.
 
 Ideal for Graphite-style workflows where each branch usually has one commit and you keep amending it. Reflog Diff lets you quickly see what changed between amend snapshots.
 
+## Installation
+
+```bash
+cursor --install-extension justinpchang.reflog-diff
+```
+
 ## What it does
 
 - Compact reflog sidebar with always-visible `L` / `R` selectors
